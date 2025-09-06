@@ -1,0 +1,49 @@
+services:
+  emsub:
+    build: .
+    container_name: emsub
+    ports:
+      - "${EMSUB_HTTP_PORT}:${EMSUB_HTTP_PORT}"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  postgres:
+    image: postgres:16
+    container_name: emsubpostgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data/
+    env_file:
+      - .env      
+    environment:
+      POSTGRES_USER: ${EMSUB_DB_USER}
+      POSTGRES_PASSWORD: ${EMSUB_DB_PASSWORD}
+      POSTGRES_DB: ${EMSUB_DB_NAME}
+    ports:
+      - '${EMSUB_DB_PORT}:5432'
+    healthcheck: 
+      test: ["CMD-SHELL", "pg_isready -U ${EMSUB_DB_USER} -d ${EMSUB_DB_NAME}"] 
+      interval: 2s 
+      timeout: 2s 
+      retries: 30      
+    
+  migrate:
+    image: migrate/migrate
+    env_file:
+      - .env       
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./internal/db/migrations:/migrations
+    command: [
+      "-path", "/migrations",
+      "-database", "postgres://${EMSUB_DB_USER}:${EMSUB_DB_PASSWORD}@postgres:5432/${EMSUB_DB_NAME}?sslmode=${EMSUB_DB_SLL}",
+      "up"    
+    ]
+
+volumes:
+  pgdata:        
