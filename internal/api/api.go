@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	config "github.com/glkeru/EM_Subscriptions/internal/config"
 	interfaces "github.com/glkeru/EM_Subscriptions/internal/interfaces"
 	model "github.com/glkeru/EM_Subscriptions/internal/model"
 	utils "github.com/glkeru/EM_Subscriptions/internal/utils"
@@ -20,11 +21,13 @@ type Server struct {
 	router *mux.Router
 	repo   interfaces.RepoSubcription
 	logger *zap.Logger
+	config *config.Config
 }
 
-func NewServer(repo interfaces.RepoSubcription, logger *zap.Logger) (*Server, error) {
-	router := mux.NewRouter()
-	server := &Server{router, repo, logger}
+func NewServer(repo interfaces.RepoSubcription, logger *zap.Logger, c *config.Config) (*Server, error) {
+	router := mux.NewRouter().StrictSlash(true)
+	router.Use(MiddlewareLog(logger, c))
+	server := &Server{router, repo, logger, c}
 
 	router.HandleFunc("/api/v1/subscription", server.SubscriptionPing).Methods(http.MethodHead)
 	router.HandleFunc("/api/v1/subscription", server.SubscriptionCreate).Methods(http.MethodPost)
@@ -33,6 +36,9 @@ func NewServer(repo interfaces.RepoSubcription, logger *zap.Logger) (*Server, er
 	router.HandleFunc("/api/v1/subscription/{id}", server.SubscriptionUpdate).Methods(http.MethodPut)
 	router.HandleFunc("/api/v1/subscription/{id}", server.SubscriptionPatch).Methods(http.MethodPatch)
 	router.HandleFunc("/api/v1/subscription/{id}", server.SubscriptionDelete).Methods(http.MethodDelete)
+
+	router.HandleFunc("/api/v1/total", server.SubscriptionTotal).Methods(http.MethodGet)
+
 	return server, nil
 }
 
@@ -84,14 +90,14 @@ func (s *Server) SubscriptionCreate(w http.ResponseWriter, req *http.Request) {
 	subs.ServiceName = subreq.ServiceName
 	subs.UserId = subreq.UserId
 	subs.Price = subreq.Price
-	subs.StartDate, err = utils.ParseDate(subreq.StartDate)
+	subs.StartDate, err = utils.ParseDate(subreq.StartDate, DateFormat)
 	if err != nil {
 		s.LogError("start_date parsing error", "SubscriptionCreate", err, subs.StartDate)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if subreq.EndDate != "" {
-		dt, err := utils.ParseDate(subreq.EndDate)
+		dt, err := utils.ParseDate(subreq.EndDate, DateFormat)
 		if err != nil {
 			s.LogError("end_date parsing error", "SubscriptionCreate", err, subs.EndDate)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -117,6 +123,7 @@ func (s *Server) SubscriptionCreate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.Write(r)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -149,9 +156,9 @@ func (s *Server) SubscriptionRead(w http.ResponseWriter, req *http.Request) {
 	subresp.ServiceName = sub.ServiceName
 	subresp.UserId = sub.UserId
 	subresp.Price = sub.Price
-	subresp.StartDate = sub.StartDate.Format("01-2006")
+	subresp.StartDate = sub.StartDate.Format(DateFormat)
 	if sub.EndDate != nil {
-		subresp.EndDate = sub.EndDate.Format("01-2006")
+		subresp.EndDate = sub.EndDate.Format(DateFormat)
 	}
 
 	r, err := json.Marshal(subresp)
@@ -161,8 +168,9 @@ func (s *Server) SubscriptionRead(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Write(r)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	w.Write(r)
 }
 
 // Update (PUT)
@@ -205,14 +213,14 @@ func (s *Server) SubscriptionUpdate(w http.ResponseWriter, req *http.Request) {
 	subs.ServiceName = subreq.ServiceName
 	subs.UserId = subreq.UserId
 	subs.Price = subreq.Price
-	subs.StartDate, err = utils.ParseDate(subreq.StartDate)
+	subs.StartDate, err = utils.ParseDate(subreq.StartDate, DateFormat)
 	if err != nil {
 		s.LogError("start_date parsing error", "SubscriptionUpdate", err, subs.StartDate)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if subreq.EndDate != "" {
-		dt, err := utils.ParseDate(subreq.EndDate)
+		dt, err := utils.ParseDate(subreq.EndDate, DateFormat)
 		if err != nil {
 			s.LogError("end_date parsing error", "SubscriptionUpdate", err, subs.EndDate)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -297,7 +305,7 @@ func (s *Server) SubscriptionPatch(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "start_date parsing error", http.StatusBadRequest)
 			return
 		}
-		start, err := utils.ParseDate(str)
+		start, err := utils.ParseDate(str, DateFormat)
 		if err != nil {
 			s.LogError("start_date parsing error", "SubscriptionPatch", err, v.(string))
 			http.Error(w, "start_date parsing error", http.StatusBadRequest)
@@ -314,7 +322,7 @@ func (s *Server) SubscriptionPatch(w http.ResponseWriter, req *http.Request) {
 			return
 
 		}
-		end, err := utils.ParseDate(str)
+		end, err := utils.ParseDate(str, DateFormat)
 		if err != nil {
 			s.LogError("end_date parsing error", "SubscriptionPatch", err, v.(string))
 			http.Error(w, "end_date parsing error", http.StatusBadRequest)
@@ -390,7 +398,7 @@ func (s *Server) SubscriptionList(w http.ResponseWriter, req *http.Request) {
 
 	strid = vars.Get("start_date")
 	if strid != "" {
-		startdate, err := utils.ParseDate(strid)
+		startdate, err := utils.ParseDate(strid, DateFormat)
 		if err != nil {
 			s.LogError("start_date format is wrong", "SubscriptionList", err, nil)
 			http.Error(w, "start_date format is wrong", http.StatusBadRequest)
@@ -400,7 +408,7 @@ func (s *Server) SubscriptionList(w http.ResponseWriter, req *http.Request) {
 	}
 	strid = vars.Get("end_date")
 	if strid != "" {
-		enddate, err := utils.ParseDate(strid)
+		enddate, err := utils.ParseDate(strid, DateFormat)
 		if err != nil {
 			s.LogError("end_date format is wrong", "SubscriptionList", err, nil)
 			http.Error(w, "end_date format is wrong", http.StatusBadRequest)
@@ -416,9 +424,16 @@ func (s *Server) SubscriptionList(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	lensub := len(subs)
 	resp := &SubscriptionListResponse{}
-	resp.Data = make([]SubscriptionFull, 0, len(subs))
+	resp.Data = make([]SubscriptionFull, 0, lensub)
 	resp.Limit = limit
+	resp.Limit = s.config.Limit
+	// вернем дефолтный лимит, если обрезали выборку
+	if resp.Limit == 0 && lensub > s.config.Limit {
+		resp.Limit = s.config.Limit
+	}
+
 	resp.Offset = offset
 	for _, v := range subs {
 		var rdata SubscriptionFull
@@ -426,9 +441,9 @@ func (s *Server) SubscriptionList(w http.ResponseWriter, req *http.Request) {
 		rdata.UserId = v.UserId
 		rdata.ServiceName = v.ServiceName
 		rdata.Price = v.Price
-		rdata.StartDate = v.StartDate.Format("01-2006")
+		rdata.StartDate = v.StartDate.Format(DateFormat)
 		if v.EndDate != nil {
-			rdata.EndDate = v.EndDate.Format("01-2006")
+			rdata.EndDate = v.EndDate.Format(DateFormat)
 		}
 		resp.Data = append(resp.Data, rdata)
 	}
@@ -440,6 +455,67 @@ func (s *Server) SubscriptionList(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Write(r)
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	w.Write(r)
+}
+
+// List
+func (s *Server) SubscriptionTotal(w http.ResponseWriter, req *http.Request) {
+	vars := req.URL.Query()
+	var user uuid.UUID
+	var service string
+	var start *time.Time
+	var end *time.Time
+	var err error
+
+	strid := vars.Get("user_id")
+	if strid != "" {
+		user, err = uuid.Parse(strid)
+		if err != nil {
+			s.LogError("user_id format is wrong", "SubscriptionTotal", err, nil)
+			http.Error(w, "user_id format is wrong", http.StatusBadRequest)
+			return
+		}
+	}
+	service = vars.Get("service_name")
+	strid = vars.Get("start_date")
+	if strid != "" {
+		startdate, err := utils.ParseDate(strid, DateFormat)
+		if err != nil {
+			s.LogError("start_date format is wrong", "SubscriptionTotal", err, nil)
+			http.Error(w, "start_date format is wrong", http.StatusBadRequest)
+			return
+		}
+		start = &startdate
+	}
+	strid = vars.Get("end_date")
+	if strid != "" {
+		enddate, err := utils.ParseDate(strid, DateFormat)
+		if err != nil {
+			s.LogError("end_date format is wrong", "SubscriptionTotal", err, nil)
+			http.Error(w, "end_date format is wrong", http.StatusBadRequest)
+			return
+		}
+		end = &enddate
+	}
+
+	resp := &SubscriptionTotalResponse{}
+	resp.Price, err = s.repo.SubscriptionTotal(req.Context(), user, service, start, end)
+	if err != nil {
+		s.LogError("DB list error", "SubscriptionTotal", err, vars)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	r, err := json.Marshal(resp)
+	if err != nil {
+		s.LogError("JSON marshal error", "SubscriptionTotal", err, resp)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(r)
 }

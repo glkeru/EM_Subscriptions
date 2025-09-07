@@ -9,7 +9,9 @@ type Config struct {
 	DBUser     string `mapstructure:"EMSUB_DB_USER"`
 	DBPassword string `mapstructure:"EMSUB_DB_PASSWORD"`
 	DBName     string `mapstructure:"EMSUB_DB_NAME"`
-	DBSLL      string `mapstructure:"EMSUB_DB_SLL"`
+	DBSSL      string `mapstructure:"EMSUB_DB_SSL"`
+	Limit      int    `mapstructure:"limit"`
+	LogBody    bool   `mapstructure:"logbody"`
 }
 
 func ConfigLoad() (c *Config, err error) {
@@ -21,6 +23,7 @@ func ConfigLoad() (c *Config, err error) {
 
 	v.SetDefault("EMSUB_HTTP_PORT", 8080)
 	v.SetDefault("EMSUB_DB_SLL", "disable")
+	v.SetDefault("EMSUB_QUERY_LIMIT", 10000)
 
 	_ = v.ReadInConfig()
 

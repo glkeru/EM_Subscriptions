@@ -17,17 +17,18 @@ import (
 )
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	config *config.Config
 }
 
 func NewRepository(c *config.Config) (*Repository, error) {
-	dsn := "postgres://" + c.DBUser + ":" + c.DBPassword + "@" + c.DBHost + ":" + c.DBPort + "/" + c.DBName + "?sslmode=" + c.DBSLL
+	dsn := "postgres://" + c.DBUser + ":" + c.DBPassword + "@" + c.DBHost + ":" + c.DBPort + "/" + c.DBName + "?sslmode=" + c.DBSSL
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dsn)
-	return &Repository{pool}, err
+	return &Repository{pool, c}, err
 }
 
 // создание подписки
@@ -128,9 +129,12 @@ func (r *Repository) SubscriptionPatch(ctx context.Context, id uuid.UUID, fields
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE subscriptions SET %s WHERE id=$%d", strings.Join(cols, ","), index)
 
-	_, err = conn.Exec(ctx, query, args...)
+	cmdTag, err := conn.Exec(ctx, query, args...)
 	if err != nil {
 		return err
+	}
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("subscription %w", model.ErrNotFound)
 	}
 
 	return nil
@@ -191,8 +195,10 @@ func (r *Repository) SubscriptionList(ctx context.Context, user uuid.UUID, servi
 
 	if limit != 0 {
 		sqlist = sqlist.Limit(uint64(limit))
+	} else {
+		limit = r.config.Limit
 	}
-	sqlist = sqlist.Offset(uint64(offset))
+	sqlist = sqlist.Offset(uint64(offset)).Limit(uint64(limit))
 
 	sql, args, err := sqlist.ToSql()
 	if err != nil {
@@ -219,14 +225,73 @@ func (r *Repository) SubscriptionList(ctx context.Context, user uuid.UUID, servi
 }
 
 // стоимость подписок
-func (r *Repository) SubscriptionTotal(ctx context.Context, user uuid.UUID, service_name string, start *time.Time, end *time.Time) (uint, error) {
+func (r *Repository) SubscriptionTotal(ctx context.Context, user uuid.UUID, service_name string, start *time.Time, end *time.Time) (total uint, err error) {
 	conn, err := r.pool.Acquire(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer conn.Release()
 
-	// TODO: заморочка с подсчетом месяцев
+	args := make([]any, 0, 4)
 
-	return 0, nil
+	var startdate time.Time
+	var enddate time.Time
+	if start != nil {
+		startdate = *start
+	} else {
+		// если не задали начальную дату
+		startdate = time.Unix(0, 0)
+	}
+	if end != nil {
+		enddate = *end
+	} else {
+		// если не задали конечную дату
+		enddate = time.Now()
+
+	}
+
+	args = append(args, startdate)
+	args = append(args, enddate)
+	index := 2
+
+	// считаем кол-во месяцев и умножаем на стоимость, исключая те, что не попадают по условию
+	sql := `WITH period AS (
+				SELECT $1::date AS period_start, $2::date AS period_end
+				),
+				per_sub AS (
+				SELECT 
+					s.price,
+					(
+					(DATE_PART('year', LEAST(COALESCE(s.end_date, p.period_end), p.period_end))
+					- DATE_PART('year', GREATEST(s.start_date, p.period_start))) * 12
+					+ (DATE_PART('month', LEAST(COALESCE(s.end_date, p.period_end), p.period_end))
+					- DATE_PART('month', GREATEST(s.start_date, p.period_start))) + 1
+					)::int AS months_in_period
+				FROM public.subscriptions s
+				CROSS JOIN period p
+				WHERE s.start_date <= p.period_end
+					AND COALESCE(s.end_date, p.period_end) >= p.period_start`
+
+	if service_name != "" {
+		index++
+		sql = fmt.Sprintf(sql+` AND service_name = $%d`, index)
+		args = append(args, service_name)
+	}
+	if user != uuid.Nil {
+		index++
+		sql = fmt.Sprintf(sql+` AND user_id = $%d`, index)
+		args = append(args, user)
+	}
+
+	sql = sql + ` )
+				SELECT COALESCE(SUM(price * months_in_period), 0) AS total_revenue
+				FROM per_sub;
+				`
+	row := conn.QueryRow(ctx, sql, args...)
+	err = row.Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+
+	return total, nil
 }

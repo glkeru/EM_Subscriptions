@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/jackc/pgx/v5 v5.7.5
+	github.com/rs/cors v1.11.1
 	github.com/spf13/viper v1.20.1
 	go.uber.org/zap v1.27.0
 )

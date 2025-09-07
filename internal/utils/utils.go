@@ -5,11 +5,9 @@ import (
 	"time"
 )
 
-const form = "01-2006"
-
 // парсинг месяца в дату
-func ParseDate(s string) (time.Time, error) {
-	t, err := time.Parse(form, s)
+func ParseDate(s string, f string) (time.Time, error) {
+	t, err := time.Parse(f, s)
 	if err != nil {
 		return t, fmt.Errorf("date parse error: %w", err)
 	}

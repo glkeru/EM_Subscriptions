@@ -12,6 +12,7 @@ import (
 	api "github.com/glkeru/EM_Subscriptions/internal/api"
 	config "github.com/glkeru/EM_Subscriptions/internal/config"
 	db "github.com/glkeru/EM_Subscriptions/internal/db"
+	"github.com/rs/cors"
 	"go.uber.org/zap"
 )
 
@@ -36,9 +37,14 @@ func main() {
 	}
 
 	// server
-	r, err := api.NewServer(repo, logger)
+	r, err := api.NewServer(repo, logger, conf)
+
+	crs := cors.New(cors.Options{
+		AllowedOrigins: []string{"http://localhost:8088", "http://127.0.0.1:8088"}})
+	handler := crs.Handler(r)
+
 	srv := &http.Server{
-		Handler:      r,
+		Handler:      handler,
 		Addr:         ":" + conf.Port,
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,

@@ -41,9 +41,18 @@ services:
       - ./internal/db/migrations:/migrations
     command: [
       "-path", "/migrations",
-      "-database", "postgres://${EMSUB_DB_USER}:${EMSUB_DB_PASSWORD}@postgres:5432/${EMSUB_DB_NAME}?sslmode=${EMSUB_DB_SLL}",
+      "-database", "postgres://${EMSUB_DB_USER}:${EMSUB_DB_PASSWORD}@postgres:5432/${EMSUB_DB_NAME}?sslmode=${EMSUB_DB_SSL}",
       "up"    
     ]
+
+  swagger:
+    image: swaggerapi/swagger-ui
+    ports:
+      - "${EMSUB_SWAG_PORT}:8080"
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    volumes:
+      - ./docs/openapi.yaml:/spec/openapi.yaml:ro
 
 volumes:
   pgdata:        

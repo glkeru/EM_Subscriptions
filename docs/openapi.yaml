@@ -1,0 +1,255 @@
+openapi: 3.0.3
+info:
+  title: Effective Mobile Subscriptions
+  description: REST-сервис для агрегации данных об онлайн-подписках пользователей
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8099/api/v1
+
+paths:
+  /subscription:
+    post:
+      summary: Создание подписки (CREATE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionData'
+      responses:
+        "201":
+          description: Успешное создание
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionCreateResponse'
+    get:
+      summary: Список подписок (LIST)
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: service_name
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            example: '01-2025'
+            pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          required: false
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            example: '12-2025'
+            pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          required: false
+        - name: limit
+          in: query
+          schema:
+            type: integer
+          required: false
+        - name: offset
+          in: query
+          schema:
+            type: integer
+          required: false
+      responses:
+        "200":
+          description: Список подписок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionsListResponse'
+
+  /subscription/{id}:
+    get:
+      summary: Получение подписки (READ)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Данные подписки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionFull'
+    put:
+      summary: Обновление подписки (PUT)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionData'
+      responses:
+        "200":
+          description: Успешное обновление
+
+    patch:
+      summary: Обновление подписки (PATCH)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionPatch'
+      responses:
+        "200":
+          description: Успешное обновление
+
+    delete:
+      summary: Удаление подписки
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Успешное удаление
+
+  /total:
+    get:
+      summary: Суммарной стоимости всех подписок за выбранный период с фильтрацией по id пользователя и названию подписки
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: service_name
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            example: '01-2025'
+            pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          required: false
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            example: '12-2025'
+            pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          required: false
+      responses:
+        "200":
+          description: Суммарная стоимость
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionTotalResponse'
+
+components:
+  schemas:
+    SubscriptionData:
+      type: object
+      required:
+        - service_name
+        - price
+        - user_id
+        - start_date
+      properties:
+        service_name:
+          type: string
+        price:
+          type: integer
+        user_id:
+          type: string
+          format: uuid
+        start_date:
+          type: string
+          pattern: '^\d{2}-\d{4}$' # MM-YYYY
+          example: '01-2025'
+        end_date:
+          type: string
+          pattern: '^\d{2}-\d{4}$' # MM-YYYY
+          example: '12-2025'
+
+    SubscriptionPatch:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        service_name:
+          type: string
+        price:
+          type: integer
+        start_date:
+          type: string
+          pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          example: '01-2025'
+        end_date:
+          type: string
+          pattern: '^\d{2}-\d{4}$' # MM-YYYY          
+          example: '12-2025'
+
+
+    SubscriptionFull:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+        - $ref: '#/components/schemas/SubscriptionData'
+
+    SubscriptionsListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionFull'
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    SubscriptionCreateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+
+
+    SubscriptionTotalResponse:
+      type: object
+      properties:
+        total:
+          type: integer
